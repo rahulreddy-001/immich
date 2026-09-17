@@ -991,7 +991,7 @@ export class MetadataService extends BaseService {
   }
 
   private getDates(
-    asset: { id: string; originalPath: string; fileCreatedAt: Date },
+    asset: { id: string; originalPath: string; fileCreatedAt: Date; originalFileName: string },
     exifTags: ImmichTags,
     stats: Stats,
   ) {
@@ -1038,7 +1038,7 @@ export class MetadataService extends BaseService {
     if (!localDateTime || !dateTimeOriginal) {
       // FileCreateDate is not available on linux, likely because exiftool hasn't integrated the statx syscall yet
       // birthtime is not available in Docker on macOS, so it appears as 0
-      const earliestDate = DateTime.fromMillis(
+      let earliestDate = DateTime.fromMillis(
         Math.min(
           asset.fileCreatedAt.getTime(),
           stats.birthtimeMs ? Math.min(stats.mtimeMs, stats.birthtimeMs) : stats.mtime.getTime(),
@@ -1047,6 +1047,25 @@ export class MetadataService extends BaseService {
       this.logger.debug(
         `No exif date time found, falling back on ${earliestDate.toISO()}, earliest of file creation and modification for asset ${asset.id}: ${asset.originalPath}`,
       );
+      if (asset.originalFileName) {
+        /**
+          * WhatsApp filename format:
+          *   IMG-yyyymmdd-WAxxxx.jpg
+          *   VID-yyyymmdd-WAxxxx.mp4
+          */
+        const whatsappDate = asset.originalFileName.match(/^(?:IMG|VID)-(\d{8})-WA(\d{4})\.(?:jpe?g|mp4)$/i);
+        if (whatsappDate) {
+          const dateFromFilename = DateTime.fromFormat(whatsappDate[1], 'yyyyMMdd', { zone: 'UTC' }).plus({
+            seconds: Number(whatsappDate[2]),
+          });
+          if (dateFromFilename.isValid) {
+            earliestDate = dateFromFilename;
+            this.logger.debug(
+              `WhatsApp filename detected for asset ${asset.id}: ${asset.originalFileName}. Using date from filename: ${dateFromFilename.toISO()}`,
+            );
+          }
+        }
+      }
       dateTimeOriginal = localDateTime = earliestDate;
     }
 
