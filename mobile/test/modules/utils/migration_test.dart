@@ -74,7 +74,7 @@ void main() {
     )..where((row) => row.id.equals('trashed'))).getSingle();
     expect(local.createdAt, platformDate);
     expect(trashed.createdAt, platformDate);
-    expect(Store.tryGet(StoreKey.version), 27);
+    expect(Store.tryGet(StoreKey.version), targetVersion);
   });
 
   test('keeps EXIF date without trash access', () async {
@@ -91,7 +91,7 @@ void main() {
 
     final asset = await (ctx.db.select(ctx.db.localAssetEntity)..where((row) => row.id.equals('exif'))).getSingle();
     expect(asset.createdAt, takenAt);
-    expect(Store.tryGet(StoreKey.version), 27);
+    expect(Store.tryGet(StoreKey.version), targetVersion);
     verifyNever(() => nativeSyncApi.getTrashedAssets());
   });
 
@@ -105,7 +105,7 @@ void main() {
 
     final asset = await (ctx.db.select(ctx.db.localAssetEntity)..where((row) => row.id.equals('local'))).getSingle();
     expect(asset.createdAt, wrongDate);
-    expect(Store.tryGet(StoreKey.version), 27);
+    expect(Store.tryGet(StoreKey.version), targetVersion);
     verify(() => nativeSyncApi.getTrashedAssets()).called(1);
   });
 
@@ -119,32 +119,32 @@ void main() {
 
     final asset = await (ctx.db.select(ctx.db.localAssetEntity)..where((row) => row.id.equals('local'))).getSingle();
     expect(asset.createdAt, wrongDate);
-    expect(Store.tryGet(StoreKey.version), 27);
+    expect(Store.tryGet(StoreKey.version), targetVersion);
   });
 
-  test('skips out-of-range date and completes migration', () async {
+  test('clamps out-of-range date and completes migration', () async {
     final wrongDate = DateTime.utc(2026);
     await Store.put(StoreKey.version, 26);
     await ctx.newLocalAsset(id: 'local', createdAt: wrongDate);
     when(
       () => nativeSyncApi.getAssetsForAlbum('album'),
-    ).thenAnswer((_) async => [_asset('local', wrongDate, createdAtSeconds: 8640000000001)]);
+    ).thenAnswer((_) async => [_asset('local', DateTime.utc(144769, 11, 18, 12, 38, 32))]);
 
     await migrateDatabaseIfNeeded(ctx.db, nativeSyncApi, permissionApi);
 
     final asset = await (ctx.db.select(ctx.db.localAssetEntity)..where((row) => row.id.equals('local'))).getSingle();
-    expect(asset.createdAt, wrongDate);
-    expect(Store.tryGet(StoreKey.version), 27);
+    expect(asset.createdAt, DateTime.utc(9999, 12, 31));
+    expect(Store.tryGet(StoreKey.version), targetVersion);
   });
 }
 
 class MockPermissionApi extends Mock implements PermissionApi {}
 
-PlatformAsset _asset(String id, DateTime createdAt, {DateTime? updatedAt, int? createdAtSeconds}) => PlatformAsset(
+PlatformAsset _asset(String id, DateTime createdAt, {DateTime? updatedAt}) => PlatformAsset(
   id: id,
   name: '$id.jpg',
   type: 1,
-  createdAt: createdAtSeconds ?? createdAt.millisecondsSinceEpoch ~/ 1000,
+  createdAt: createdAt.millisecondsSinceEpoch ~/ 1000,
   updatedAt: (updatedAt ?? createdAt).millisecondsSinceEpoch ~/ 1000,
   durationMs: 0,
   orientation: 0,
